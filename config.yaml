@@ -1,0 +1,12 @@
+jiraBaseURL: https://issues.redhat.com
+project: OLM
+
+daysUntilStale: 180
+daysUntilClose: 90
+
+exemptLabels:
+  - lifecycle-frozen
+
+staleLabel: lifecycle-stale
+closeStatus: Closed
+limitPerRun: 100

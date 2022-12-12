@@ -1,20 +1,22 @@
 package stalebot
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	jira "github.com/andygrunwald/go-jira/v2/onpremise"
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type Stalebot struct {
 	Client *jira.Client
 	Config Config
-	Debug  bool
 	DryRun bool
+	Prompt bool
 	Logger logr.Logger
 }
 
@@ -38,7 +40,7 @@ func (bot *Stalebot) Run(ctx context.Context) error {
 		opt := &jira.SearchOptions{
 			MaxResults: 1000, // Max results can go up to 1000
 			StartAt:    last,
-			Fields:     []string{"key,summary,labels,status,changelog,updated"},
+			Fields:     []string{"key,issuetype,summary,labels,status,changelog,updated"},
 			Expand:     "changelog",
 		}
 
@@ -51,7 +53,43 @@ func (bot *Stalebot) Run(ctx context.Context) error {
 			issueLogger := bot.Logger.WithValues("key", issue.Key)
 			op := bot.Config.IssueOperation(now, &issue)
 			opCounts[op] += 1
-			issueLogger.Info("planned operation", "op", op)
+
+			if op == None {
+				continue
+			}
+
+			if bot.Prompt {
+				confirmed, err := promptToConfirm(ctx, op, &issue)
+				if err != nil {
+					return fmt.Errorf("confirm operation: %v", err)
+				}
+				if !confirmed {
+					continue
+				}
+			}
+
+			if bot.DryRun {
+				issueLogger.Info("dry-run operation", "op", op)
+				continue
+			}
+
+			issueLogger.Info("performing operation", "op", op)
+			var err error
+			switch op {
+			case None:
+				continue
+			case AddStaleLabel:
+				err = bot.addStaleLabel(ctx, &issue)
+			case RemoveStaleLabel:
+				err = bot.removeStaleLabel(ctx, &issue)
+			case Close:
+				err = bot.closeIssue(ctx, &issue)
+			}
+			if err != nil {
+				return fmt.Errorf("operation %q failed on issue %q: %v", op, issue.Key, err)
+			}
+			issueLogger.Info("operation succeeded", "op", op)
+
 		}
 
 		processed += len(chunk)
@@ -67,24 +105,38 @@ func (bot *Stalebot) Run(ctx context.Context) error {
 	return nil
 }
 
+type update struct {
+	Labels []labels `json:"labels" structs:"labels"`
+}
+
+type labels struct {
+	Add    string `json:"add,omitempty" structs:"add"`
+	Remove string `json:"remove,omitempty" structs:"remove"`
+}
+
 func (bot *Stalebot) addStaleLabel(ctx context.Context, issue *jira.Issue) error {
-	issue.Fields.Labels = append(issue.Fields.Labels, bot.Config.StaleLabel)
-	if _, _, err := bot.Client.Issue.Update(ctx, issue, &jira.UpdateQueryOptions{NotifyUsers: true}); err != nil {
-		return fmt.Errorf("add stale label %q to issue: %v", bot.Config.StaleLabel, err)
-	}
 	if _, _, err := bot.Client.Issue.AddComment(ctx, issue.ID, &jira.Comment{Body: bot.Config.MarkComment}); err != nil {
 		return fmt.Errorf("add mark comment to issue: %v", err)
+	}
+
+	reqBody := map[string]interface{}{"update": update{Labels: []labels{{Add: bot.Config.StaleLabel}}}}
+	resp, err := bot.Client.Issue.UpdateIssue(ctx, issue.ID, reqBody)
+	if err != nil {
+		return fmt.Errorf("add stale label %q to issue: %v", bot.Config.StaleLabel, jira.NewJiraError(resp, err))
 	}
 	return nil
 }
 
 func (bot *Stalebot) removeStaleLabel(ctx context.Context, issue *jira.Issue) error {
-	issue.Fields.Labels = sets.NewString(issue.Fields.Labels...).Delete(bot.Config.StaleLabel).List()
-	if _, _, err := bot.Client.Issue.Update(ctx, issue, &jira.UpdateQueryOptions{}); err != nil {
-		return fmt.Errorf("remove stale label %q from issue: %v", bot.Config.StaleLabel, err)
-	}
 	if _, _, err := bot.Client.Issue.AddComment(ctx, issue.ID, &jira.Comment{Body: bot.Config.UnmarkComment}); err != nil {
 		return fmt.Errorf("add unmark comment to issue: %v", err)
+	}
+
+	reqBody := map[string]interface{}{"update": update{Labels: []labels{{Remove: bot.Config.StaleLabel}}}}
+	resp, err := bot.Client.Issue.UpdateIssue(ctx, issue.ID, reqBody)
+	if err != nil {
+		err = jira.NewJiraError(resp, err)
+		return fmt.Errorf("remove stale label %q from issue: %v", bot.Config.StaleLabel, jira.NewJiraError(resp, err))
 	}
 	return nil
 }
@@ -114,4 +166,44 @@ func transitionID(transitions []jira.Transition, statusName string) (string, err
 		}
 	}
 	return "", fmt.Errorf("no transition found to status %q", statusName)
+}
+
+func promptToConfirm(ctx context.Context, op Operation, issue *jira.Issue) (bool, error) {
+	reader := bufio.NewReader(os.Stdin)
+
+	type result struct {
+		answer bool
+		err    error
+	}
+	res := make(chan result)
+
+	go func() {
+		for {
+			msg := fmt.Sprintf("Perform operation %q on %s %s: %s?", op, issue.Fields.Type.Name, issue.Key, issue.Fields.Summary)
+			fmt.Printf("%s [y/N]: ", msg)
+
+			response, err := reader.ReadString('\n')
+			if err != nil {
+				res <- result{answer: false, err: fmt.Errorf("read input from prompt: %v", err)}
+				return
+			}
+
+			response = strings.ToLower(strings.TrimSpace(response))
+
+			if response == "y" || response == "yes" {
+				res <- result{answer: true, err: nil}
+				return
+			} else if response == "" || response == "n" || response == "no" {
+				res <- result{answer: false, err: nil}
+				return
+			}
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		fmt.Printf("\n")
+		return false, ctx.Err()
+	case r := <-res:
+		return r.answer, r.err
+	}
 }

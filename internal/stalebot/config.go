@@ -58,6 +58,8 @@ func LoadConfig(configFile string) (*Config, error) {
 		return nil, err
 	}
 
+	c.setDefaults()
+
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}

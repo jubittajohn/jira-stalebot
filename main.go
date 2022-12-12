@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,7 +9,7 @@ import (
 	jira "github.com/andygrunwald/go-jira/v2/onpremise"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
-	isatty "github.com/mattn/go-isatty"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -77,15 +76,12 @@ func rootCmd(log logr.Logger) *cobra.Command {
 				exitError(setupLog, "create jira client", err)
 			}
 
-			if !dryRun {
-				exitError(setupLog, "invalid flags", fmt.Errorf("dry-run must be enabled, for now"))
-			}
-
 			stalebotLog := log.WithName("stalebot")
 			bot := stalebot.Stalebot{
 				Client: cl,
 				Config: *cfg,
 				DryRun: dryRun,
+				Prompt: !skipPrompt,
 				Logger: stalebotLog,
 			}
 			if err := bot.Run(cmd.Context()); err != nil {

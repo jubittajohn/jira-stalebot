@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"io/ioutil"
 
 	jira "github.com/andygrunwald/go-jira/v2/onpremise"
 	"github.com/go-logr/logr"
@@ -18,6 +19,42 @@ type Stalebot struct {
 	DryRun bool
 	Prompt bool
 	Logger logr.Logger
+}
+
+func (bot *Stalebot) Clone(ctx context.Context) error {
+	if bot.Client == nil {
+		panic("stalebot requires a client: client is nil")
+	}
+
+	if err := bot.Config.Validate(); err != nil {
+		return fmt.Errorf("invalid stalebot config: %v", err)
+	}
+
+	bot.Logger.Info("Creating new issue")
+
+	// construct our issue struct here
+	fields := &jira.IssueFields{
+		Type: jira.IssueType{ Name: "Story" },
+		Project: jira.Project{ Key: bot.Config.Project },
+		//Description: "This is a duplicate issue",
+		//	Summary: "Introduce support for feature gates",
+		//Priority: &jira.Priority{ Name: "Normal" },
+	}
+
+	// actually send issue create command
+	createdIssue, resp, err := bot.Client.Issue.Create(ctx, &jira.Issue{ Fields: fields })
+	if err != nil {
+		defer resp.Body.Close()
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("could not read the returned data")
+		}
+		bot.Logger.Info("Response body", "resp", string(data))
+		return fmt.Errorf("Couldn't create issue: %v", err)
+	}
+
+	bot.Logger.Info("Successfully created issue: %s", createdIssue)
+	return nil
 }
 
 func (bot *Stalebot) Run(ctx context.Context) error {

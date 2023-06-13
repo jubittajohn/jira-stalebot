@@ -84,7 +84,8 @@ func rootCmd(log logr.Logger) *cobra.Command {
 				Prompt: !skipPrompt,
 				Logger: stalebotLog,
 			}
-			if err := bot.Run(cmd.Context()); err != nil {
+			if err := bot.Clone(cmd.Context()); err != nil {
+				// bot.Run(cmd.Context()); err != nil {
 				exitError(stalebotLog, "run stalebot", err)
 			}
 		},

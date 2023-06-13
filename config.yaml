@@ -1,5 +1,5 @@
 jiraBaseURL: https://issues.redhat.com
-project: OLM
+project: OPECO
 
 daysUntilStale: 180
 daysUntilClose: 90

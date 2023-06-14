@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	jira "github.com/andygrunwald/go-jira/v2/onpremise"
+	jira "github.com/andygrunwald/go-jira/v2/cloud"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/util/sets"

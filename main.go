@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	jira "github.com/andygrunwald/go-jira/v2/onpremise"
+	jira "github.com/andygrunwald/go-jira/v2/cloud"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/mattn/go-isatty"
@@ -70,7 +70,7 @@ func rootCmd(log logr.Logger) *cobra.Command {
 				exitError(setupLog, "load stalebot config", err)
 			}
 
-			tp := &jira.PATAuthTransport{Token: pat}
+			tp := &jira.BasicAuthTransport{APIToken: pat, Username: "jujohn@redhat.com"}
 			cl, err := jira.NewClient(cfg.JiraBaseURL, tp.Client())
 			if err != nil {
 				exitError(setupLog, "create jira client", err)
@@ -84,6 +84,7 @@ func rootCmd(log logr.Logger) *cobra.Command {
 				Prompt: !skipPrompt,
 				Logger: stalebotLog,
 			}
+
 			if err := bot.Clone(cmd.Context()); err != nil {
 				// bot.Run(cmd.Context()); err != nil {
 				exitError(stalebotLog, "run stalebot", err)

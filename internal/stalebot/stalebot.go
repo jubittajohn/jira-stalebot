@@ -4,12 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 	"time"
-	"io/ioutil"
 
-	jira "github.com/andygrunwald/go-jira/v2/onpremise"
+	jira "github.com/andygrunwald/go-jira/v2/cloud"
 	"github.com/go-logr/logr"
 )
 
@@ -34,15 +34,16 @@ func (bot *Stalebot) Clone(ctx context.Context) error {
 
 	// construct our issue struct here
 	fields := &jira.IssueFields{
-		Type: jira.IssueType{ Name: "Story" },
-		Project: jira.Project{ Key: bot.Config.Project },
-		//Description: "This is a duplicate issue",
-		//	Summary: "Introduce support for feature gates",
-		//Priority: &jira.Priority{ Name: "Normal" },
+		Type:        jira.IssueType{Name: "Task"},
+		Project:     jira.Project{Key: bot.Config.Project},
+		Reporter:    &jira.User{AccountID: "712020:cc169cdf-86bd-474d-87fd-efcd55fb97f2"},
+		Description: "This is a duplicate issue",
+		Summary:     "Introduce support for feature gates",
+		//Priority: &jira.Priority{ Name: "High" },
 	}
 
 	// actually send issue create command
-	createdIssue, resp, err := bot.Client.Issue.Create(ctx, &jira.Issue{ Fields: fields })
+	createdIssue, resp, err := bot.Client.Issue.Create(ctx, &jira.Issue{Fields: fields})
 	if err != nil {
 		defer resp.Body.Close()
 		data, err := ioutil.ReadAll(resp.Body)
@@ -53,7 +54,7 @@ func (bot *Stalebot) Clone(ctx context.Context) error {
 		return fmt.Errorf("Couldn't create issue: %v", err)
 	}
 
-	bot.Logger.Info("Successfully created issue: %s", createdIssue)
+	bot.Logger.Info("Successfully created issue", "issue", createdIssue)
 	return nil
 }
 

@@ -17,6 +17,7 @@ func LoadPersonalAccessToken() (string, error) {
 	if pat, ok := os.LookupEnv(patEnvVar); ok {
 		return pat, nil
 	}
+
 	patFile, err := xdg.SearchConfigFile(xdgConfigFilePath)
 	if err != nil {
 		return "", fmt.Errorf("%s environment variable not set and personal access token file not found: %v", patEnvVar, err)
